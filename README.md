@@ -15,7 +15,7 @@
 ✅ Automatic re-authentication on session expiry (401 errors)  
 ✅ Designed to integrate easily with **Home Assistant**  
 ✅ Modular structure for future expandability  
-✅ Supports multiple inverters from a single account  
+✅ Supports DISCOVERING multiple inverters from a single account
 
 ---
 
