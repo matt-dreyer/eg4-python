@@ -17,52 +17,39 @@ IGNORE_SSL = os.getenv("EG4_DISABLE_VERIFY_SSL", "1") == "1"
 
 @pytest.mark.asyncio
 async def test_login():
-    """Test successful login."""
-
+    """Test successful login and exercise the functions"""
     api = EG4InverterAPI(USERNAME, PASSWORD, BASE_URL)
+    print(api._password)
     await api.login(ignore_ssl=IGNORE_SSL)
     api.set_selected_inverter(inverterIndex=0)
     assert api.jsessionid is not None
+    print("Logged in")
     data = await api.get_inverter_runtime_async()
     assert data.success
     assert data.statusText is not None
-
-    await api.close()
-
-@pytest.mark.asyncio
-async def test_get_inverter_runtime():
-    """Test retrieving inverter runtime data."""
-    api = EG4InverterAPI(USERNAME, PASSWORD, BASE_URL)
-    await api.login(ignore_ssl=IGNORE_SSL)
-    api.set_selected_inverter(inverterIndex=0)
-    data = await api.get_inverter_runtime_async()
-    assert data.success
-    assert data.statusText is not None
-    await api.close()
-
-@pytest.mark.asyncio
-async def test_get_inverter_energy():
-    """Test retrieving inverter energy data."""
-    api = EG4InverterAPI(USERNAME, PASSWORD, BASE_URL)
-    await api.login(ignore_ssl=IGNORE_SSL)
-    api.set_selected_inverter(inverterIndex=0)
+    print("get_inverter_runtime_async success")
     data = await api.get_inverter_energy_async()
     assert data.success
-    await api.close()
-
+    print("get_inverter_energy_async success")
+    data = await api.get_inverter_battery_async()
+    assert data.remainCapacity is not None
+    print("get_inverter_battery_async success")
+    inverter_params = await api.read_settings_async()
+    assert inverter_params.success is True
+    assert hasattr(inverter_params, 'inverterRuntimeDeviceTime')
+    print("read_settings_async success")
+    attr = "OFF_GRID_HOLD_GEN_CHG_START_SOC" if hasattr(inverter_params, "OFF_GRID_HOLD_GEN_CHG_START_SOC") else "HOLD_BATTERY_WARNING_SOC"
+    orig_value = getattr(inverter_params,attr)
+    assert orig_value is not None
+    new_value = int(orig_value) - 1
+    data = await api.write_setting_async(hold_param=attr, value_text=new_value)
+    assert data is True
+    data = await api.write_setting_async(hold_param=attr, value_text=orig_value)
+    print("write_setting_async success")
+    
 @pytest.mark.asyncio
 async def test_invalid_login():
     """Test handling of invalid credentials."""
-    api = EG4InverterAPI(USERNAME, "xxx", BASE_URL)
+    api2 = EG4InverterAPI(USERNAME, "xxx", BASE_URL)
     with pytest.raises(EG4AuthError):
-        await api.login(ignore_ssl=IGNORE_SSL)
-
-@pytest.mark.asyncio
-async def test_get_inverter_battery():
-    """Test retrieving inverter battery data."""
-    api = EG4InverterAPI(USERNAME, PASSWORD, BASE_URL)
-    await api.login(ignore_ssl=IGNORE_SSL)
-    api.set_selected_inverter(inverterIndex=0)
-    data = await api.get_inverter_battery_async()
-    assert data.remainCapacity is not None
-    await api.close()
+        await api2.login(ignore_ssl=IGNORE_SSL)

@@ -1,6 +1,6 @@
 [project]
 name = "eg4_inverter_api"
-version = "0.1.1"
+version = "0.1.2"
 description = "A Python API for interacting with EG4 Inverter systems."
 authors = [
     { name = "Garreth Jeremiah", email = "twistedroutes76@example.com" }

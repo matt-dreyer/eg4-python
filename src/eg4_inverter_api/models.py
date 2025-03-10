@@ -198,6 +198,28 @@ class RuntimeData:
     def to_dict(self):
         return self.__dict__
 
+class InverterParameters:
+    """Represents inverter parameters."""
+
+    def __init__(
+        self
+    ):
+        self._skip_args = ["valueFrame","inverterSn","startRegister","pointNumber"]
+        self._main_args = ["success"]
+        self.success=True
+
+    def from_dict(self, d) -> None:
+        """Set values based on dictionary."""
+        for key, value in d.items():
+            if key not in self._main_args and key not in self._skip_args:
+                setattr(self, key, value)
+
+    def __repr__(self):
+        return f"RuntimeData({self.to_dict()})"
+
+    def to_dict(self):
+        return self.__dict__
+
 
 class APIResponse:
     """A general-purpose response model for handling success/failure states."""
