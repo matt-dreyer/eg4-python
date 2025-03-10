@@ -103,15 +103,26 @@ PASSWORD = os.getenv("PASSWORD")
 - `async def login()` – Handles login and saves the JSESSIONID cookie.  Accepts ignore_ssl=[true|false]
 - `async def close()` – Gracefully closes the HTTP session.
 
+### **setup **
+- `get_inverters()` - list the inverters associated with the account, after login
+- `set_selected_inverter(inverterIndex=index)` - Selects an inverter from the list of inverters
+- `set_selected_inverter(plantId=plantId, serialNum=serialNum)`  - Explicitly sets the selected inverter
+
 ### **Data Retrieval**
 - `async def get_inverter_runtime_async()` – Retrieves inverter runtime data.
 - `async def get_inverter_energy_async()` – Retrieves inverter energy data.
 - `async def get_inverter_battery_async()` – Retrieves battery data, including individual battery units.
 
+### **Parameters read/write**
+- `async def read_settings_async()` – reads parameters.
+- `async def write_settings_async()` – writes a parameter value.
+
 ### **Sync Methods (Wrappers)**
 - `get_inverter_runtime()`
 - `get_inverter_energy()`
 - `get_inverter_battery()`
+- `read_settings()`
+- `write_settings()`
 
 ---
 
