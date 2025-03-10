@@ -131,7 +131,7 @@ pytest tests/
 ## Roadmap
 - ✅ Initial EG4 API implementation
 - ✅ Async/Sync support
-- 🔜 Setting inverter values
+- ✅ Setting inverter values
 - 🔜 ...Full Home Assistant Integration
 - 🔜 ...You tell me
 

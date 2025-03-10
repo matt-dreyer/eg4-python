@@ -13,6 +13,8 @@ from eg4_inverter_api.constants import (
     INVERTER_ENERGY_ENDPOINT,
     INVERTER_RUNTIME_ENDPOINT,
     LOGIN_ENDPOINT,
+    INVERTER_PARAMETER_READ,
+    INVERTER_PARAMETER_WRITE,
 )
 from eg4_inverter_api.exceptions import EG4APIError, EG4AuthError
 from eg4_inverter_api.models import (
@@ -22,6 +24,7 @@ from eg4_inverter_api.models import (
     EnergyData,
     Inverter,
     RuntimeData,
+    InverterParameters,
 )
 
 
@@ -39,22 +42,25 @@ class EG4InverterAPI:
         self._plantId = plantId
         self._serialNum = serialNum
         self._base_url = base_url or "https://monitor.eg4electronics.com"
+        self._ignore_ssl = False
 
         # Endpoint references
         self._login_url = f"{self._base_url}{LOGIN_ENDPOINT}"
         self._inverter_runtime_url = f"{self._base_url}{INVERTER_RUNTIME_ENDPOINT}"
         self._inverter_energy_url = f"{self._base_url}{INVERTER_ENERGY_ENDPOINT}"
         self._inverter_battery_url = f"{self._base_url}{INVERTER_BATTERY_ENDPOINT}"
+        self._inverter_parameter_read = f"{self._base_url}{INVERTER_PARAMETER_READ}"
+        self._inverter_parameter_write = f"{self._base_url}{INVERTER_PARAMETER_WRITE}"
 
-    async def _get_session(self, ignore_ssl=False):
+    async def _get_session(self):
         """Initialize an aiohttp session."""
         headers={
             "Content-Type": "application/x-www-form-urlencoded",
             "Accept": "application/json",
         }
-        do_ssl = not ignore_ssl
+        do_ssl = not self._ignore_ssl
 
-        if self._session is None:
+        if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 connector=aiohttp.TCPConnector(ssl=do_ssl),
                 headers=headers
@@ -63,7 +69,8 @@ class EG4InverterAPI:
 
     async def login(self, ignore_ssl=False) -> None:
         """Authenticate and retrieve session cookie."""
-        session = await self._get_session(ignore_ssl)
+        self._ignore_ssl = ignore_ssl
+        session = await self._get_session()
 
         payload = f"account={self._username}&password={self._password}"
         async with session.post(self._login_url, data=payload) as response:
@@ -177,6 +184,27 @@ class EG4InverterAPI:
         else:
             return APIResponse(success=False, error_message=response.get("error"))
 
+    async def read_settings_async(self):
+        """Read inverter settings across 3 register ranges."""
+        inverterParameters = InverterParameters()
+        success = True
+        
+        for start_register in [0, 127, 240, 500, 2000, 5000]:
+            payload = f"inverterSn={self._serialNum}&startRegister={start_register}&pointNumber=127&autoRetry=true"
+            response = await self._request("POST", self._inverter_parameter_read, payload)
+            if response.get("success"):
+                inverterParameters.from_dict(response)
+            else:
+                return APIResponse(success=False, error_message=response.get("error"))
+
+        return inverterParameters
+
+    async def write_setting_async(self, hold_param, value_text):
+        """Write a single inverter setting."""
+        payload = f"inverterSn={self._serialNum}&holdParam={hold_param}&valueText={value_text}&clientType=WEB&remoteSetType=NORMAL"
+        response = await self._request("POST", self._inverter_parameter_write, payload)
+        return response.get("success")
+    
     async def close(self):
         """Close the aiohttp session when done."""
         if self._session:
@@ -190,10 +218,18 @@ class EG4InverterAPI:
     def get_inverter_energy(self, captureExtra=True):
         """Sync wrapper for inverter energy data."""
         return asyncio.run(self.get_inverter_energy_async(captureExtra))
-
+    
     def get_inverter_battery(self, captureExtra=True):
         """Sync wrapper for inverter battery data."""
         return asyncio.run(self.get_inverter_battery_async(captureExtra))
+
+    def read_settings(self):
+        """Sync wrapper for inverter battery data."""
+        return asyncio.run(self.read_settings_async())
+
+    def write_settings(self, hold_param, value_text):
+        """Sync wrapper for inverter battery data."""
+        return asyncio.run(self.write_setting_async(hold_param, value_text))
 
     # --------- SYNC FUNCTIONS  ---------
     def get_inverters(self):
@@ -260,7 +296,11 @@ if __name__ == "__main__":
             logging.info(f"\nBattery Data:\n{battery_data}")
             for unit in battery_data.battery_units:
                 logging.info(f"\t{unit}")
-
+                
+            # Read Parameters
+            params = await api.read_settings_async()
+            logging.info(f"\nparameters:\n{params}")
+            
         except EG4AuthError as auth_err:
             logging.error(f"❌ Authentication Error: {auth_err}")
         except EG4APIError as api_err:
