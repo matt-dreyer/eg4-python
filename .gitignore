@@ -175,6 +175,7 @@ cython_debug/
 .venv/
 .env
 .env.*
+!.env.example
 
 # IDE
 .vscode/
