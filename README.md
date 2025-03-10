@@ -103,7 +103,7 @@ PASSWORD = os.getenv("PASSWORD")
 - `async def login()` – Handles login and saves the JSESSIONID cookie.  Accepts ignore_ssl=[true|false]
 - `async def close()` – Gracefully closes the HTTP session.
 
-### **setup **
+### **Setup**
 - `get_inverters()` - list the inverters associated with the account, after login
 - `set_selected_inverter(inverterIndex=index)` - Selects an inverter from the list of inverters
 - `set_selected_inverter(plantId=plantId, serialNum=serialNum)`  - Explicitly sets the selected inverter
