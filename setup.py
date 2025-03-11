@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="eg4_inverter_api",
-    version="0.1.2",
+    version="0.1.3",
     description="A Python API for interacting with EG4 Inverter systems.",
     author="Garreth Jeremiah",
     author_email="twistedroutes76@example.com",
