@@ -1,12 +1,17 @@
 if __name__ == "__main__":
     import sys
     import os
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
+    sys.path.insert(
+        0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    )
 
 import asyncio
 import logging
-
+import json
 import aiohttp
+
+from eg4_inverter_api.exceptions import EG4APIError, EG4AuthError
 
 from eg4_inverter_api.constants import (
     INVERTER_BATTERY_ENDPOINT,
@@ -16,7 +21,7 @@ from eg4_inverter_api.constants import (
     INVERTER_PARAMETER_READ,
     INVERTER_PARAMETER_WRITE,
 )
-from eg4_inverter_api.exceptions import EG4APIError, EG4AuthError
+
 from eg4_inverter_api.models import (
     APIResponse,
     BatteryData,
@@ -32,17 +37,20 @@ class EG4InverterAPI:
     """Asynchronous EG4 API client."""
 
     def __init__(
-        self, username, password, serialNum=None, plantId=None, base_url=None
+        self, username, password, serialNum=None, base_url=None, session=None
     ) -> None:
         self._username = username
         self._password = password
-        self._session = None
-        self.jsessionid = None
+        self._session = session
+        self._provided_session = self._session is not None
         self._inverters = []
-        self._plantId = plantId
         self._serialNum = serialNum
         self._base_url = base_url or "https://monitor.eg4electronics.com"
         self._ignore_ssl = False
+        self._request_headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+        }
 
         # Endpoint references
         self._login_url = f"{self._base_url}{LOGIN_ENDPOINT}"
@@ -54,17 +62,19 @@ class EG4InverterAPI:
 
     async def _get_session(self):
         """Initialize an aiohttp session."""
-        headers={
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Accept": "application/json",
-        }
         do_ssl = not self._ignore_ssl
+        if not do_ssl and self._provided_session:
+            # must use new session..sorry
+            logging.warning("Need to use custom session to bypass SSL verification")
+            self._session = None
+            self._provided_session = False
 
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 connector=aiohttp.TCPConnector(ssl=do_ssl),
-                headers=headers
+                headers=self._request_headers,
             )
+
         return self._session
 
     async def login(self, ignore_ssl=False) -> None:
@@ -73,23 +83,20 @@ class EG4InverterAPI:
         session = await self._get_session()
 
         payload = f"account={self._username}&password={self._password}"
-        async with session.post(self._login_url, data=payload) as response:
+        async with session.post(
+            self._login_url, data=payload, headers=self._request_headers
+        ) as response:
             if response.status == 200:
-                self.jsessionid = self._extract_jsessionid(response.cookies)
                 inverter_data = await response.json()
-                if "success" not in inverter_data or inverter_data["success"] is not True:
+                if (
+                    "success" not in inverter_data
+                    or inverter_data["success"] is not True
+                ):
                     raise EG4AuthError("Login failed. Please check your credentials.")
                 self._inverters = self._extract_inverters(inverter_data)
                 logging.info(f"Login successful for user {self._username}")
             else:
                 raise EG4AuthError("Login failed. Please check your credentials.")
-
-    def _extract_jsessionid(self, cookies):
-        """Extract JSESSIONID from cookies."""
-        for key, cookie in cookies.items():
-            if key == "JSESSIONID":
-                return cookie.value
-        raise EG4AuthError("Failed to retrieve JSESSIONID during login.")
 
     def _extract_inverters(self, data):
         """Extract available inverters from the login response."""
@@ -114,12 +121,9 @@ class EG4InverterAPI:
 
     async def _request(self, method, url, payload=None):
         """Unified async request method with automatic reauthentication."""
-        if not self.jsessionid:
-            await self.login()
-
         session = await self._get_session()
 
-        headers = {"Cookie": f"JSESSIONID={self.jsessionid}"}
+        headers = self._request_headers if method != "GET" else {}
         async with session.request(
             method, url, headers=headers, data=payload
         ) as response:
@@ -188,10 +192,12 @@ class EG4InverterAPI:
         """Read inverter settings across 3 register ranges."""
         inverterParameters = InverterParameters()
         success = True
-        
+
         for start_register in [0, 127, 240, 500, 2000, 5000]:
             payload = f"inverterSn={self._serialNum}&startRegister={start_register}&pointNumber=127&autoRetry=true"
-            response = await self._request("POST", self._inverter_parameter_read, payload)
+            response = await self._request(
+                "POST", self._inverter_parameter_read, payload
+            )
             if response.get("success"):
                 inverterParameters.from_dict(response)
             else:
@@ -204,7 +210,7 @@ class EG4InverterAPI:
         payload = f"inverterSn={self._serialNum}&holdParam={hold_param}&valueText={value_text}&clientType=WEB&remoteSetType=NORMAL"
         response = await self._request("POST", self._inverter_parameter_write, payload)
         return response.get("success")
-    
+
     async def close(self):
         """Close the aiohttp session when done."""
         if self._session:
@@ -218,7 +224,7 @@ class EG4InverterAPI:
     def get_inverter_energy(self, captureExtra=True):
         """Sync wrapper for inverter energy data."""
         return asyncio.run(self.get_inverter_energy_async(captureExtra))
-    
+
     def get_inverter_battery(self, captureExtra=True):
         """Sync wrapper for inverter battery data."""
         return asyncio.run(self.get_inverter_battery_async(captureExtra))
@@ -240,16 +246,28 @@ class EG4InverterAPI:
         self, plantId=None, serialNum=None, inverterIndex=None
     ) -> None:
         """Set the plantId and serialNum."""
-        
-        if plantId is not None and serialNum is not None:
-            self._plantId = plantId
+        # TODO: handle serialNum without plant (discover plant)
+        if serialNum is not None:
             self._serialNum = serialNum
+            inverter = [x for x in self._inverters if x.serialNum == serialNum]
+            if len(inverter) == 0:
+                inverter = inverter[0]
+                self._plantId = inverter.plantId
+            else:
+                inverter = None
         elif inverterIndex is not None and len(self._inverters) > inverterIndex:
             inverter = self._inverters[inverterIndex]
             self._plantId = inverter.plantId
             self._serialNum = inverter.serialNum
         else:
             raise EG4APIError("No Inverter or Plant/Serial selection")
+
+    def get_selected_inverter(self) -> Inverter:
+        """retrieve the selected inverter"""
+        inverter = [x for x in self._inverters if x.serialNum == self._serialNum]
+        if len(inverter) == 1:
+            return inverter[0]
+        return None
 
 
 # --------- MAIN EXECUTION BLOCK FOR TESTING ---------
@@ -270,12 +288,17 @@ if __name__ == "__main__":
         PLANT_ID = os.getenv("EG4_PLANT_ID")
         BASE_URL = os.getenv("EG4_BASE_URL", "https://monitor.eg4electronics.com")
         IGNORE_SSL = os.getenv("EG4_DISABLE_VERIFY_SSL", "0") == "1"
-        
+
         # api = EG4InverterAPI(USERNAME, PASSWORD, serialNum, plantId)
-        api = EG4InverterAPI(USERNAME, PASSWORD, BASE_URL)
+        session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False))
+        # session = None
+        api = EG4InverterAPI(USERNAME, PASSWORD, base_url=BASE_URL, session=session)
 
         try:
             await api.login(ignore_ssl=IGNORE_SSL)  # noqa: SLF001
+            inverters = api.get_inverters()
+            selected_inverter = [x for x in inverters if x.serialNum == "43730P0090"]
+
             api.set_selected_inverter(inverterIndex=0)
 
             # Show available inverters
@@ -296,11 +319,11 @@ if __name__ == "__main__":
             logging.info(f"\nBattery Data:\n{battery_data}")
             for unit in battery_data.battery_units:
                 logging.info(f"\t{unit}")
-                
+
             # Read Parameters
             params = await api.read_settings_async()
             logging.info(f"\nparameters:\n{params}")
-            
+
         except EG4AuthError as auth_err:
             logging.error(f"❌ Authentication Error: {auth_err}")
         except EG4APIError as api_err:
