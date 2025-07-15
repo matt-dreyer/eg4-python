@@ -10,19 +10,25 @@ import asyncio
 import logging
 import json
 import aiohttp
+import time
+from datetime import date
 
-from eg4_inverter_api.exceptions import EG4APIError, EG4AuthError
+from eg4_python.exceptions import (
+    EG4APIError, 
+    EG4AuthError,
+)
 
-from eg4_inverter_api.constants import (
+from eg4_python.constants import (
     INVERTER_BATTERY_ENDPOINT,
     INVERTER_ENERGY_ENDPOINT,
     INVERTER_RUNTIME_ENDPOINT,
     LOGIN_ENDPOINT,
     INVERTER_PARAMETER_READ,
     INVERTER_PARAMETER_WRITE,
+    INVERTER_DAILY_CHART_ENDPOINT,
 )
 
-from eg4_inverter_api.models import (
+from eg4_python.models import (
     APIResponse,
     BatteryData,
     BatteryUnit,
@@ -30,10 +36,11 @@ from eg4_inverter_api.models import (
     Inverter,
     RuntimeData,
     InverterParameters,
+    DailyChartData, 
 )
 
 
-class EG4InverterAPI:
+class EG4Inverter:
     """Asynchronous EG4 API client."""
 
     def __init__(
@@ -59,6 +66,8 @@ class EG4InverterAPI:
         self._inverter_battery_url = f"{self._base_url}{INVERTER_BATTERY_ENDPOINT}"
         self._inverter_parameter_read = f"{self._base_url}{INVERTER_PARAMETER_READ}"
         self._inverter_parameter_write = f"{self._base_url}{INVERTER_PARAMETER_WRITE}"
+        self._inverter_daily_chart_url = f"{self._base_url}{INVERTER_DAILY_CHART_ENDPOINT}"
+
 
     async def _get_session(self):
         """Initialize an aiohttp session."""
@@ -145,6 +154,19 @@ class EG4InverterAPI:
 
             return await response.json()
 
+
+    async def get_inverter_data_history_async(self, captureExtra=True):
+        """Retrieve inverter historical data."""
+        # payload = f"serialNum={self._serialNum}"
+        # response = await self._request("GET", "https://monitor.eg4electronics.com/WManage/web/analyze/data/export/44700E0137/2025-06-16?endDateText=2025-06-23")
+        response = await self._request("GET", "https://monitor.eg4electronics.com/WManage/web/analyze/data")
+
+        if response.get("success"):
+            return Data_History(captureExtra=captureExtra, **response)
+        else:
+            return APIResponse(success=False, error_message=response.get("error"))
+
+
     async def get_inverter_runtime_async(self, captureExtra=True):
         """Retrieve inverter runtime data."""
         payload = f"serialNum={self._serialNum}"
@@ -211,12 +233,39 @@ class EG4InverterAPI:
         response = await self._request("POST", self._inverter_parameter_write, payload)
         return response.get("success")
 
+    async def get_daily_chart_data_async(self, date_text: str = None, captureExtra=True):
+        """
+        Retrieve daily chart data for a specific date.
+        
+        Args:
+            date_text: Date in YYYY-MM-DD format. If None, uses today's date.
+            captureExtra: Whether to capture raw response data
+            
+        Returns:
+            DailyChartData object containing time series data
+        """
+        if date_text is None:
+            date_text = date.today().strftime("%Y-%m-%d")
+        
+        payload = f"serialNum={self._serialNum}&dateText={date_text}"
+        response = await self._request("POST", self._inverter_daily_chart_url, payload)
+        
+        if response.get("success"):
+            return DailyChartData(captureExtra=captureExtra, **response)
+        else:
+            return APIResponse(success=False, error_message=response.get("error"))
+
+ 
     async def close(self):
         """Close the aiohttp session when done."""
         if self._session:
             await self._session.close()
 
     # --------- SYNC WRAPPERS ---------
+    def get_inverter_data_history(self, captureExtra=True):
+        """Sync wrapper for inverter runtime data."""
+        return asyncio.run(self.get_inverter_data_history_async(captureExtra))
+
     def get_inverter_runtime(self, captureExtra=True):
         """Sync wrapper for inverter runtime data."""
         return asyncio.run(self.get_inverter_runtime_async(captureExtra))
@@ -236,6 +285,10 @@ class EG4InverterAPI:
     def write_settings(self, hold_param, value_text):
         """Sync wrapper for inverter battery data."""
         return asyncio.run(self.write_setting_async(hold_param, value_text))
+
+    def get_daily_chart_data(self, date_text: str = None, captureExtra=True):
+        """Sync wrapper for daily chart data."""
+        return asyncio.run(self.get_daily_chart_data_async(date_text, captureExtra))        
 
     # --------- SYNC FUNCTIONS  ---------
     def get_inverters(self):
@@ -289,10 +342,10 @@ if __name__ == "__main__":
         BASE_URL = os.getenv("EG4_BASE_URL", "https://monitor.eg4electronics.com")
         IGNORE_SSL = os.getenv("EG4_DISABLE_VERIFY_SSL", "0") == "1"
 
-        # api = EG4InverterAPI(USERNAME, PASSWORD, serialNum, plantId)
+        # api = EG4Inverter(USERNAME, PASSWORD, serialNum, plantId)
         session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False))
         # session = None
-        api = EG4InverterAPI(USERNAME, PASSWORD, base_url=BASE_URL, session=session)
+        api = EG4Inverter(USERNAME, PASSWORD, base_url=BASE_URL, session=session)
 
         try:
             await api.login(ignore_ssl=IGNORE_SSL)  # noqa: SLF001
@@ -308,20 +361,41 @@ if __name__ == "__main__":
 
             # Runtime Data
             runtime_data = await api.get_inverter_runtime_async()
+            await asyncio.sleep(1) 
             logging.info(f"\nInverter Runtime Data:\n{runtime_data}")
 
             # Energy Data
             energy_data = await api.get_inverter_energy_async()
+            await asyncio.sleep(1) 
             logging.info(f"\nInverter Energy Data:\n{energy_data}")
 
             # Battery Data
             battery_data = await api.get_inverter_battery_async()
+            await asyncio.sleep(1) 
             logging.info(f"\nBattery Data:\n{battery_data}")
             for unit in battery_data.battery_units:
                 logging.info(f"\t{unit}")
 
-            # Read Parameters
+           # Daily Chart Data Test 
+            daily_data = await api.get_daily_chart_data_async()
+            await asyncio.sleep(1) 
+            logging.info(f"\nDaily Chart Data:\n{daily_data}")
+            
+            if daily_data.success:
+                logging.info(f"Peak solar generation: {daily_data.peak_solar_generation}W")
+                logging.info(f"Total solar generation: {daily_data.total_solar_generation_kwh:.2f} kWh")
+                logging.info(f"Total consumption: {daily_data.total_consumption_kwh:.2f} kWh")
+                logging.info(f"Battery SOC range: {daily_data.min_soc}% - {daily_data.max_soc}%")
+                
+                # Show some sample data points
+                logging.info("Sample data points:")
+                for i, point in enumerate(daily_data.data_points[:3]):
+                    logging.info(f"  {point}")
+
+            # Read Parameters -- this seems to be failing likely due to API rate limiting
+            #await asyncio.sleep(30) 
             params = await api.read_settings_async()
+
             logging.info(f"\nparameters:\n{params}")
 
         except EG4AuthError as auth_err:
