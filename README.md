@@ -1,10 +1,10 @@
 
-# EG4 Inverter API
+# EG4 Inverter Python Client
 
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-**`eg4_inverter_api`** is a Python library that provides both **async** and **sync** methods to interact with the **EG4 Inverter** cloud API. It handles login, data retrieval, and session management efficiently — ideal for integration with **Home Assistant**, automation platforms, or custom monitoring solutions.
+**`eg4_python`** is a Python library that provides both **async** and **sync** methods to interact with the **EG4 Inverter** cloud API. It handles login, data retrieval, and session management efficiently — ideal for integration with **Home Assistant**, MCP, automation platforms, or custom monitoring solutions.
 
 ## Caveats
 
@@ -22,13 +22,13 @@
 
 ### Using PyPI (Recommended)
 ```bash
-pip install eg4_inverter
+pip install eg4_python
 ```
 
 ### Development Version (Editable Mode)
 ```bash
-git clone https://github.com/yourusername/eg4_inverter_api.git
-cd eg4_inverter
+git clone https://github.com/yourusername/eg4_python.git
+cd eg4_python
 pip install -e .[dev]  # For development and testing
 ```
 
@@ -41,7 +41,7 @@ You can look at the "test" function in client.py
 
 ```python
 import asyncio
-from eg4_inverter_api import EG4InverterAPI
+from eg4_python import EG4InverterAPI
 
 async def main():
     api = EG4InverterAPI(username="username", password="password", base_url="https://monitor.eg4electronics.com")
